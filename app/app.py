@@ -9,13 +9,6 @@ from core.llm_client import chat_llm   # GenAI client
 # =========================
 
 def render_product_card(rank_index: int, rec: dict, products_df):
-    """
-    Render a single product as a nice comparison card.
-    - rank_index: 1, 2, 3, ...
-    - rec: one element from ranking["results"]
-    - products_df: the filtered pandas DataFrame with candidates
-    """
-    # Try to find the product row by ID
     row = None
     try:
         matched = products_df[products_df["id"] == rec.get("id")]
@@ -24,7 +17,6 @@ def render_product_card(rank_index: int, rec: dict, products_df):
     except Exception:
         row = None
 
-    # Build a compact specs line if we have row data
     if row is not None:
         specs_line = (
             f"💰 ${row.get('price_usd', 'N/A')} • "
@@ -73,13 +65,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Global styling + animated search bar
 st.markdown(
     """
     <style>
     .stApp {
         background-color: #f9fafb;
-        color: #111827;  /* ensure all default text is dark */
+        color: #111827;
     }
     .block-container {
         padding-top: 2.5rem;
@@ -94,7 +85,6 @@ st.markdown(
         background: transparent !important;
         padding: 0rem;
         margin-bottom: 2rem;
-        box-shadow: none !important;
     }
 
     .hero-badge {
@@ -103,6 +93,7 @@ st.markdown(
         color: #2563eb;
         margin-bottom: 0.6rem;
     }
+
     .hero-title {
         font-size: 2.6rem;
         line-height: 1.1;
@@ -110,6 +101,7 @@ st.markdown(
         color: #0f172a;
         margin-bottom: 1rem;
     }
+
     .hero-subtitle {
         font-size: 1.05rem;
         color: #4b5563;
@@ -134,13 +126,11 @@ st.markdown(
         box-shadow: 0 16px 32px rgba(37, 99, 235, 0.45);
     }
 
-    /* ============================
-       Animated Search Bar
-       ============================ */
+    /* Animated Search Bar */
     div[data-baseweb="input"] {
         border-radius: 999px !important;
         overflow: hidden;
-        transition: box-shadow 0.25s ease, transform 0.2s ease, background 0.3s ease;
+        transition: box-shadow 0.25s ease, transform 0.2s ease;
         box-shadow: 0 4px 10px rgba(15,23,42,0.08);
         background: #ffffff;
         animation: genie-breathe 3s ease-in-out infinite;
@@ -153,9 +143,8 @@ st.markdown(
     }
 
     div[data-baseweb="input"]:focus-within {
-        box-shadow:
-            0 0 0 3px rgba(37,99,235,0.35),
-            0 18px 30px rgba(15,23,42,0.18);
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.35),
+                     0 18px 30px rgba(15,23,42,0.18);
         transform: translateY(-1px);
         animation: none;
     }
@@ -171,8 +160,9 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# TOP WHITE HEADER BAR (center + uppercase)
+# TOP WHITE HEADER BAR
 # ---------------------------------------------------------
+
 st.markdown(
     """
     <div style="
@@ -181,6 +171,7 @@ st.markdown(
         border-radius: 18px;
         box-shadow: 0 4px 18px rgba(0,0,0,0.08);
         margin-bottom: 35px;
+        text-align: center;
     ">
         <h1 style="
             margin: 0;
@@ -188,8 +179,6 @@ st.markdown(
             font-weight: 800;
             color: #0f172a;
             text-transform: uppercase;
-            text-align: center;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         ">
             🧞‍♂️ SHOPGENIE-E
         </h1>
@@ -216,10 +205,7 @@ with hero:
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<div class='hero-subtitle'>"
-            "Describe what you're looking for and let the genie compare laptops, phones, "
-            "tablets and monitors for you."
-            "</div>",
+            "<div class='hero-subtitle'>Describe what you're looking for and let the genie compare laptops, phones, tablets and monitors for you.</div>",
             unsafe_allow_html=True,
         )
 
@@ -234,10 +220,9 @@ with hero:
 
     with right:
         try:
-            st.image("assets/genie.png", use_container_width=True)
+            st.image("app/assets/genie.png", use_container_width=True)
         except Exception:
-            st.markdown("### 🧞‍♂️")
-            st.write("Genie illustration goes here.")
+            st.write("🧞‍♂️ Genie illustration goes here.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -258,48 +243,40 @@ if generate_clicked:
                 try:
                     intent, products, ranking = run_pipeline(user_query)
 
-                    # ---------- AI SUMMARY (GenAI in the UX) ----------
                     results = ranking.get("results", [])
                     summary_text = ""
+
                     if results:
                         try:
-                            # Short, efficient prompt to reduce latency a bit
                             summary_prompt = f"""
 You are an expert electronics shopping assistant.
 
 User query: {user_query}
+Intent: {intent}
+Top results (truncated): {results[:3]}
 
-Intent (JSON): {intent}
-
-Top results (JSON, truncated): {results[:3]}
-
-In 2–3 sentences, explain in plain English:
-- who these recommendations are good for,
-- why the #1 option is a strong match,
-- one important trade-off to keep in mind.
-
-Do not repeat exact prices or long spec lists.
+In 2–3 clean sentences:
+• Who these products are ideal for
+• Why the #1 product fits best
+• One trade-off the user should know
 """
                             summary_text = chat_llm(summary_prompt)
                         except Exception as e:
-                            summary_text = f"(Could not generate AI summary: {e})"
+                            summary_text = f"(AI summary error: {e})"
 
                     if summary_text:
                         st.markdown("### 🧾 AI Shopping Summary")
-                        # Force dark text color so it doesn't disappear
                         st.markdown(
-                            f"<p style='color:#111827; font-size:0.98rem;'>{summary_text}</p>",
+                            f"<p style='color:#111827; font-size:1rem;'>{summary_text}</p>",
                             unsafe_allow_html=True,
                         )
 
-                    # Candidate products
                     if products is not None and not products.empty:
                         st.markdown("### 📦 Candidate Products (After Filters)")
                         st.dataframe(products, use_container_width=True)
                     else:
                         st.warning("No candidate products found after filtering.")
 
-                    # Ranked recommendations
                     st.markdown("### ⭐ Ranked Recommendations")
                     if results:
                         for i, rec in enumerate(results, start=1):
