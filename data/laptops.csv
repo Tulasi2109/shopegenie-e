@@ -1,0 +1,10 @@
+id,brand,model,price_usd,ram_gb,storage_gb,cpu,weight_kg,battery_wh
+1,Lenovo,ThinkPad E14,850,16,512,"i5-1240P",1.6,57
+2,Dell,XPS 13,999,16,512,"i7-1250U",1.3,51
+3,Acer,Swift X,899,16,512,"Ryzen 7 5800U",1.4,59
+4,HP,Envy 13,780,16,512,"i5-1235U",1.3,52
+5,ASUS,Vivobook 15,650,16,512,"Ryzen 5 5600H",1.8,48
+6,Apple,MacBook Air M1,749,8,256,"Apple M1",1.29,49
+7,Apple,MacBook Air M2,1099,8,256,"Apple M2",1.24,52
+8,Apple,MacBook Pro 14 M1 Pro,1699,16,512,"M1 Pro",1.6,70
+9,Apple,MacBook Pro 16 M1 Max,2499,32,1024,"M1 Max",2.1,100
