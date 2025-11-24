@@ -47,12 +47,12 @@ def _compute_weights(intent: Dict[str, Any], category: str) -> Dict[str, float]:
             "price": 0.30,
             "performance": 0.40,
             "battery": 0.30,
-            "screen": 0.00,  # not used for these
+            "screen": 0.00,  # not used heavily for these
         }
-    else:  # monitor
+    else:  # monitor or others
         weights = {
             "price": 0.40,
-            "performance": 0.10,  # e.g., refresh rate / panel – we don't model it here
+            "performance": 0.10,  # e.g., refresh rate / panel – not modeled here
             "battery": 0.00,
             "screen": 0.50,
         }
@@ -63,6 +63,7 @@ def _compute_weights(intent: Dict[str, Any], category: str) -> Dict[str, float]:
 
     # Simple mapping from textual goals to weight bumps
     for g in goals:
+        g = g.lower()
         if "performance" in g or "speed" in g or "gaming" in g:
             bump("performance")
         if "battery" in g or "long life" in g or "all day" in g:
@@ -125,17 +126,23 @@ You are given a list of candidate products as JSON:
 Each product has:
 - rank_id (a unique identifier for this session)
 - title
-- overall score (0–100) based on price, performance, battery, and screen (where applicable)
-- a few key specs (price, RAM, storage, battery, screen size if available)
+- overall score (0–100)
+- price_usd
+- ram_gb
+- storage_gb
+- battery_wh
+- screen_inches (display size in inches if available)
 
 Task:
-For EACH product, write a concise, user-friendly explanation (2–3 sentences) focusing on:
-- Why this product is a good fit for the user, given their goals
-- One clear trade-off or limitation
+For EACH product, write a persuasive, user-friendly explanation (3–4 sentences) focusing on:
+- Why this product matches the user's goals (connect goals → specs clearly)
+- One or two concrete strengths (e.g., RAM, battery, price, or screen size)
+- One clear trade-off or limitation (e.g., slightly heavier, more expensive, smaller screen)
 
 Guidelines:
-- Speak qualitatively (e.g., "strong battery life", "lightweight", "a bit more expensive").
-- Do NOT just restate raw numbers.
+- Mention the display size when it is relevant (e.g., “compact 14-inch screen” or “spacious 16-inch display”).
+- Speak qualitatively (e.g., "strong battery life", "great for multitasking", "good value for the price").
+- Do NOT just dump raw numbers.
 - Do NOT mention 'rank_id' in the explanation.
 
 Output format:
@@ -151,18 +158,15 @@ Return ONLY valid JSON (no extra text, no markdown), as a list like:
     # Try to recover JSON even if model wraps it in ```json ... ```
     text = raw.strip()
     if "```" in text:
-        # Get the content between the first pair of backticks
         parts = text.split("```")
         if len(parts) >= 3:
             text = parts[1]
-            # If it's like "json\n[...]", drop potential language hint
             if "\n" in text:
                 text = text.split("\n", 1)[1]
 
     try:
         parsed = json.loads(text)
     except Exception:
-        # Fallback: no parsed JSON → return empty dict; caller will handle
         return {}
 
     explanations: Dict[str, str] = {}
@@ -185,7 +189,17 @@ def rank_products(intent: Dict[str, Any], products: pd.DataFrame) -> Dict[str, A
     Returns a dict:
     {
         "results": [
-            {"id": ..., "title": ..., "score": 94, "explanation": "..."},
+            {
+              "id": ...,
+              "title": ...,
+              "score": 94,
+              "explanation": "...",
+              "price_usd": ...,
+              "ram_gb": ...,
+              "storage_gb": ...,
+              "battery_wh": ...,
+              "screen_inches": ...
+            },
             ...
         ],
         "category": "laptop/phone/tablet/monitor",
@@ -272,7 +286,7 @@ def rank_products(intent: Dict[str, Any], products: pd.DataFrame) -> Dict[str, A
     else:
         goals_list = [str(g) for g in goals_raw]
 
-    # 🔹 Single LLM call for all explanations
+    # Single LLM call for all explanations
     explanations_map = _build_explanations_batch(df_sorted, category, goals_list)
 
     results = []
@@ -280,12 +294,20 @@ def rank_products(intent: Dict[str, Any], products: pd.DataFrame) -> Dict[str, A
         score_float = float(row["score_continuous"])
         rank_id = row["rank_id"]
 
-        # Fallback explanation if LLM failed or didn't return this rank_id
         default_expl = (
             f"This {category} scores {int(round(score_float * 100))}/100 "
-            f"as an overall balance of price, performance, and battery for your goals."
+            f"as an overall balance of price, performance, battery, and screen for your goals."
         )
         explanation = explanations_map.get(rank_id, default_expl)
+
+        # Safely extract numeric extras for UI
+        def _get_float(col: str):
+            if col in row and pd.notna(row[col]):
+                try:
+                    return float(row[col])
+                except Exception:
+                    return None
+            return None
 
         results.append(
             {
@@ -293,6 +315,11 @@ def rank_products(intent: Dict[str, Any], products: pd.DataFrame) -> Dict[str, A
                 "title": row.get("title") or row.get("model") or "Unknown product",
                 "score": int(round(score_float * 100)),  # 0–100
                 "explanation": explanation,
+                "price_usd": _get_float("price_usd"),
+                "ram_gb": _get_float("ram_gb"),
+                "storage_gb": _get_float("storage_gb"),
+                "battery_wh": _get_float("battery_wh"),
+                "screen_inches": _get_float("screen_inches"),
             }
         )
 

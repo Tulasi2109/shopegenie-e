@@ -1,14 +1,53 @@
 # app/app.py
 
 import streamlit as st
+import pandas as pd
+
 from core.orchestrator import run_pipeline
 from core.llm_client import chat_llm   # GenAI client
+
+
+# =========================
+#   Dark table styling
+# =========================
+
+def style_dark(df: pd.DataFrame):
+    """
+    Apply a dark theme style to the candidate products table
+    so it visually matches the darker recommendation cards section.
+    """
+    return (
+        df.style
+        .set_properties(**{
+            "background-color": "#111827",   # table background
+            "color": "#F3F4F6",              # text color
+            "border-color": "#1F2937",       # grid lines
+        })
+        .set_table_styles([
+            {
+                "selector": "thead th",
+                "props": [
+                    ("background-color", "#1F2937"),
+                    ("color", "white"),
+                    ("font-weight", "bold"),
+                    ("border-bottom", "1px solid #374151"),
+                ],
+            },
+        ])
+    )
+
 
 # =========================
 #   Card renderer
 # =========================
 
 def render_product_card(rank_index: int, rec: dict, products_df):
+    """
+    Render a ranked recommendation card.
+
+    We try to re-attach richer specs from the original products_df
+    (price, RAM, storage, battery, weight, screen size).
+    """
     row = None
     try:
         matched = products_df[products_df["id"] == rec.get("id")]
@@ -23,9 +62,11 @@ def render_product_card(rank_index: int, rec: dict, products_df):
             f"🧠 {row.get('ram_gb', 'N/A')} GB RAM • "
             f"💾 {row.get('storage_gb', 'N/A')} GB storage • "
             f"🔋 {row.get('battery_wh', 'N/A')} Wh battery • "
+            f"📺 {row.get('screen_inches', 'N/A')}-inch display • "
             f"⚖️ {row.get('weight_kg', 'N/A')} kg"
         )
     else:
+        # Fallback if we cannot find the row in products_df
         specs_line = "Specs not available in table."
 
     st.markdown(
@@ -246,6 +287,7 @@ if generate_clicked:
                     results = ranking.get("results", [])
                     summary_text = ""
 
+                    # High-level summary for the user
                     if results:
                         try:
                             summary_prompt = f"""
@@ -271,12 +313,14 @@ In 2–3 clean sentences:
                             unsafe_allow_html=True,
                         )
 
+                    # Candidate products table (after filters)
                     if products is not None and not products.empty:
                         st.markdown("### 📦 Candidate Products (After Filters)")
-                        st.dataframe(products, use_container_width=True)
+                        st.dataframe(style_dark(products), use_container_width=True)
                     else:
                         st.warning("No candidate products found after filtering.")
 
+                    # Ranked recommendations
                     st.markdown("### ⭐ Ranked Recommendations")
                     if results:
                         for i, rec in enumerate(results, start=1):
