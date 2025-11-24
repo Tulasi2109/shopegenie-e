@@ -258,11 +258,8 @@ st.markdown(
 )
 
 # =====================================================================
-#   HERO SECTION + Recent Searches
+#   HERO SECTION (no recent searches)
 # =====================================================================
-
-if "recent_queries" not in st.session_state:
-    st.session_state["recent_queries"] = []
 
 hero = st.container()
 
@@ -290,20 +287,8 @@ with hero:
             key="hero_query",
         )
 
-        # Recent search chips
-        recent = st.session_state["recent_queries"]
-        if recent:
-            st.markdown("**Recent searches:**")
-            chip_cols = st.columns(min(len(recent), 5))
-            for i, q in enumerate(reversed(recent[-5:])):
-                if chip_cols[i].button(q, key=f"recent_query_{i}"):
-                    st.session_state["hero_query"] = q
-                    st.session_state["trigger_search"] = True
-
-        # Main CTA button
-        button_clicked = st.button("Get Recommendations", key="hero_button")
-        trigger_recent = st.session_state.pop("trigger_search", False)
-        generate_clicked = button_clicked or trigger_recent
+        # Main CTA button only (no recent search chips)
+        generate_clicked = st.button("Get Recommendations", key="hero_button")
 
     with right:
         try:
@@ -324,12 +309,6 @@ if generate_clicked:
         results_container.error("Please enter a query.")
     else:
         user_query = st.session_state["hero_query"].strip()
-
-        # Save into recent queries (keep last 5)
-        rq = st.session_state["recent_queries"]
-        if user_query not in rq:
-            rq.append(user_query)
-            st.session_state["recent_queries"] = rq[-5:]
 
         with results_container:
             st.subheader("Results")
@@ -411,88 +390,6 @@ In 2–3 clean sentences:
                             render_product_card(i, rec, products, user_query, intent)
                     else:
                         st.warning("No ranked recommendations returned.")
-
-                    # ==================================================
-                    # 🎛️ Interactive Re-Ranking by Sliders
-                    # ==================================================
-                    if results:
-                        st.markdown("### 🎛️ Fine-tune Your Preferences")
-
-                        with st.expander("Adjust importance of price, performance, battery, and screen size"):
-                            base_weights = ranking.get("weights", {})
-                            price_default = float(base_weights.get("price", 0.30))
-                            perf_default = float(base_weights.get("performance", 0.40))
-                            batt_default = float(base_weights.get("battery", 0.30))
-                            screen_default = float(base_weights.get("screen", 0.00))
-
-                            price_w = st.slider(
-                                "Price importance (lower price is better)",
-                                0.0, 1.0, price_default, 0.05,
-                            )
-                            perf_w = st.slider(
-                                "Performance importance (RAM + storage)",
-                                0.0, 1.0, perf_default, 0.05,
-                            )
-                            batt_w = st.slider(
-                                "Battery life importance",
-                                0.0, 1.0, batt_default, 0.05,
-                            )
-                            screen_w = st.slider(
-                                "Screen size importance",
-                                0.0, 1.0, screen_default, 0.05,
-                            )
-
-                            total_w = price_w + perf_w + batt_w + screen_w
-                            if total_w <= 0:
-                                total_w = 1.0
-
-                            w_price = price_w / total_w
-                            w_perf = perf_w / total_w
-                            w_batt = batt_w / total_w
-                            w_screen = screen_w / total_w
-
-                            # Convert results to DataFrame for re-scoring
-                            res_df = pd.DataFrame(results)
-
-                            def _norm(series, higher=True):
-                                s = pd.to_numeric(series, errors="coerce")
-                                if s.notna().sum() == 0:
-                                    return pd.Series([0.5] * len(s), index=series.index)
-                                min_v, max_v = s.min(), s.max()
-                                if math.isclose(min_v, max_v):
-                                    vals = pd.Series([0.5] * len(s), index=series.index)
-                                else:
-                                    vals = (s - min_v) / (max_v - min_v)
-                                if not higher:
-                                    vals = 1.0 - vals
-                                return vals.fillna(0.5)
-
-                            price_score = _norm(res_df.get("price_usd"), higher=False)
-                            perf_score = _norm(
-                                res_df.get("ram_gb", 0).fillna(0)
-                                + res_df.get("storage_gb", 0).fillna(0),
-                                higher=True,
-                            )
-                            batt_score = _norm(res_df.get("battery_wh"), higher=True)
-                            screen_score = _norm(res_df.get("screen_inches"), higher=True)
-
-                            res_df["custom_score"] = (
-                                w_price * price_score
-                                + w_perf * perf_score
-                                + w_batt * batt_score
-                                + w_screen * screen_score
-                            )
-
-                            res_df_sorted = res_df.sort_values(
-                                "custom_score", ascending=False
-                            ).reset_index(drop=True)
-
-                            st.markdown("#### 🔁 Re-ranked for your preferences")
-                            for idx, rec_row in res_df_sorted.iterrows():
-                                rec_dict = rec_row.to_dict()
-                                render_product_card(
-                                    idx + 1, rec_dict, products, user_query, intent
-                                )
 
                 except Exception as e:
                     st.error(f"Error: {e}")
