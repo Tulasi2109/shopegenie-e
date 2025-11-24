@@ -113,7 +113,7 @@ def _build_explanations_batch(
             }
         )
 
-        prompt = f"""
+    prompt = f"""
 You are an expert electronics advisor helping a user choose between multiple products.
 
 The user cares about: {goals_text}.
@@ -164,29 +164,44 @@ Return ONLY valid JSON (no extra text, no markdown), as a list like:
 
     raw = chat_llm(prompt)
 
-    # Try to recover JSON even if model wraps it in ```json ... ```
+    # --- Robust JSON extraction/parsing ---
     text = raw.strip()
-    if "```" in text:
-        parts = text.split("```")
-        if len(parts) >= 3:
-            text = parts[1]
-            if "\n" in text:
-                text = text.split("\n", 1)[1]
 
+    # Remove fenced code blocks if present
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+
+    parsed = None
+
+    # 1) Try direct JSON
     try:
         parsed = json.loads(text)
     except Exception:
+        parsed = None
+
+    # 2) Try extracting first JSON array block
+    if parsed is None:
+        try:
+            start = text.index("[")
+            end = text.rindex("]") + 1
+            extracted = text[start:end]
+            parsed = json.loads(extracted)
+        except Exception:
+            parsed = None
+
+    if parsed is None or not isinstance(parsed, list):
         return {}
 
     explanations: Dict[str, str] = {}
-    if isinstance(parsed, list):
-        for item in parsed:
-            if not isinstance(item, dict):
-                continue
-            rid = item.get("rank_id")
-            exp = item.get("explanation")
-            if isinstance(rid, str) and isinstance(exp, str):
-                explanations[rid] = exp.strip()
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        rid = item.get("rank_id")
+        exp = item.get("explanation")
+        if isinstance(rid, str) and isinstance(exp, str):
+            explanations[rid] = exp.strip()
 
     return explanations
 
@@ -304,8 +319,9 @@ def rank_products(intent: Dict[str, Any], products: pd.DataFrame) -> Dict[str, A
         rank_id = row["rank_id"]
 
         default_expl = (
-            f"This {category} scores {int(round(score_float * 100))}/100 "
-            f"as an overall balance of price, performance, battery, and screen for your goals."
+            f"This {category} scores {int(round(score_float * 100))}/100 and offers a strong "
+            f"balance of price, performance, battery life, and display for your needs, "
+            f"which is why it appears near the top of your recommendations."
         )
         explanation = explanations_map.get(rank_id, default_expl)
 
