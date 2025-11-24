@@ -28,13 +28,7 @@ client = OpenAI(api_key=api_key)
 
 def chat_llm(*prompt_parts: str) -> str:
     """
-    Fast, lightweight chat helper.
-
-    Supports:
-        chat_llm("prompt")
-        chat_llm(part1, part2, part3...)
-
-    All parts are joined with blank lines.
+    LLM helper for full-length JSON explanations.
     """
     if not prompt_parts:
         raise ValueError("chat_llm requires at least one prompt string.")
@@ -42,19 +36,19 @@ def chat_llm(*prompt_parts: str) -> str:
     combined_prompt = "\n\n".join(str(p) for p in prompt_parts if p)
 
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",  # 🔹 faster + cheaper than gpt-4o-mini
+        model="gpt-4.1",            # ✅ stronger model for reasoning + JSON
         messages=[
             {
                 "role": "system",
                 "content": (
-                    "You are a concise, fast assistant. "
-                    "Keep answers short, focused, and easy to scan."
+                    "You are an expert assistant that ALWAYS outputs well-formed JSON "
+                    "when asked. Never be concise. Provide full detailed content."
                 ),
             },
             {"role": "user", "content": combined_prompt},
         ],
-        temperature=0.3,
-        max_tokens=160,  # 🔹 smaller cap for speed
+        temperature=0.4,
+        max_tokens=900,             # ✅ enough tokens for 5 explanations
     )
 
     return response.choices[0].message.content
