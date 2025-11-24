@@ -5,18 +5,15 @@ from typing import Dict, Any
 
 import pandas as pd
 
-from core.llm_client import chat_llm  # kept in case you want LLM-based retrieval later
+from core.llm_client import chat_llm  # kept only for future LLM-enhanced retrieval
 
 # -------------------------------------------------------------------
-# Resolve the catalog path relative to the project root
-# Project root = folder that contains "app" and "data"
-# e.g. D:\shopgenie-e\
+# Resolve the catalog path relative to root (as in your original code)
 # -------------------------------------------------------------------
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CATALOG_PATH = ROOT_DIR / "data" / "electronics_catalog.csv"
 
 try:
-    # Load catalog once at import time
     _catalog_df = pd.read_csv(CATALOG_PATH)
 except FileNotFoundError as e:
     raise FileNotFoundError(
@@ -38,15 +35,12 @@ CATEGORY_KEYWORDS = {
 
 
 def _get_float(intent: Dict[str, Any], keys) -> float | None:
-    """
-    Try multiple possible keys in the intent dict and parse a float.
-    Returns None if nothing usable is found.
-    """
+    """Try multiple possible keys in the intent dict and parse a float.
+       Returns None if nothing usable is found."""
     for k in keys:
         if k in intent and intent[k] is not None:
             try:
-                raw = str(intent[k])
-                raw = raw.replace("$", "").strip()  # basic cleanup
+                raw = str(intent[k]).replace("$", "").strip()
                 return float(raw)
             except Exception:
                 continue
@@ -54,70 +48,85 @@ def _get_float(intent: Dict[str, Any], keys) -> float | None:
 
 
 def detect_category(intent: Dict[str, Any], user_query: str) -> str:
-    """
-    Decide which category to use (laptop / phone / tablet / monitor).
-    Priority:
-      1) explicit category/device_type in the intent (if provided)
-      2) keyword matching on the raw user_query
-      3) default to 'laptop'
-    """
-    # 1) from intent keys if present
+    """Decide which category to use (priority: explicit → keywords → fallback)."""
+    # 1) explicit
     for key in ("category", "device_type", "product_type"):
         val = intent.get(key)
         if isinstance(val, str) and val.strip():
-            normalized = val.strip().lower()
-            if normalized in CATEGORY_KEYWORDS:
-                return normalized
+            v = val.strip().lower()
+            if v in CATEGORY_KEYWORDS:
+                return v
 
-    # 2) from user_query keywords
-    q = (user_query or "").lower()
+    # 2) keyword in query
+    q = user_query.lower()
     for cat, keywords in CATEGORY_KEYWORDS.items():
         if any(kw in q for kw in keywords):
             return cat
 
-    # 3) fallback
+    # 3) default
     return "laptop"
 
 
+def _apply_min_filter(df: pd.DataFrame, col: str, min_val: float | None) -> pd.DataFrame:
+    """Helper: Filter df[col] >= min_val if col exists."""
+    if min_val is None or col not in df.columns:
+        return df
+    return df[df[col].fillna(0) >= min_val]
+
+
+def _apply_max_filter(df: pd.DataFrame, col: str, max_val: float | None) -> pd.DataFrame:
+    """Helper: Filter df[col] <= max_val if col exists."""
+    if max_val is None or col not in df.columns:
+        return df
+    return df[df[col].fillna(float("inf")) <= max_val]
+
+
 def filter_products(intent: Dict[str, Any], user_query: str) -> pd.DataFrame:
-    """
-    Filter the unified electronics catalog based on:
-      - detected category (laptop / phone / tablet / monitor)
-      - budget (if available in intent)
-      - min RAM, storage, etc. when relevant
-    """
+    """Optimized filtering with fast pandas operations + capping results."""
+
     df = _catalog_df.copy()
 
-    # ---- CATEGORY FILTERING ----
+    # ---- CATEGORY ----
     category = detect_category(intent, user_query)
     df = df[df["category"] == category]
 
-    # ---- BUDGET FILTERING ----
-    budget_max = _get_float(intent, ["budget_max", "max_price",
-                                     "budget", "price_cap"])
-    if budget_max is not None and "price_usd" in df.columns:
-        df = df[df["price_usd"] <= budget_max]
+    # ---- BUDGET ----
+    budget = _get_float(intent, ["budget_max", "max_price", "budget", "price_cap"])
+    if budget is not None:
+        # allow 10% flexibility above budget
+        df = _apply_max_filter(df, "price_usd", budget * 1.1)
 
-    # ---- MIN RAM FILTERING (mainly for laptops & tablets) ----
-    min_ram = _get_float(intent, ["min_ram_gb", "ram_min",
-                                  "ram_gb_min", "min_ram"])
-    if min_ram is not None and "ram_gb" in df.columns:
-        df = df[df["ram_gb"].fillna(0) >= min_ram]
+    # ---- HARD CONSTRAINTS ----
+    min_ram = _get_float(intent, ["min_ram_gb", "ram_min", "ram_gb_min", "min_ram"])
+    df = _apply_min_filter(df, "ram_gb", min_ram)
 
-    # ---- MIN STORAGE FILTERING ----
-    min_storage = _get_float(intent, ["min_storage_gb",
-                                      "storage_min", "min_storage"])
-    if min_storage is not None and "storage_gb" in df.columns:
-        df = df[df["storage_gb"].fillna(0) >= min_storage]
+    min_storage = _get_float(intent, ["min_storage_gb", "storage_min", "min_storage"])
+    df = _apply_min_filter(df, "storage_gb", min_storage)
 
-    # ---- MIN BATTERY FILTER (for portable devices) ----
-    min_battery = _get_float(intent, ["min_battery_wh",
-                                      "battery_min", "battery_wh_min"])
-    if min_battery is not None and "battery_wh" in df.columns:
-        df = df[df["battery_wh"].fillna(0) >= min_battery]
+    min_battery = _get_float(intent, ["min_battery_wh", "battery_min", "battery_wh_min"])
+    df = _apply_min_filter(df, "battery_wh", min_battery)
 
-    # If, after filters, df is empty, fall back to unfiltered-for-this-category
+    # If everything filtered out, fallback to category-only
     if df.empty:
-        df = _catalog_df[_catalog_df["category"] == category]
+        df = _catalog_df[_catalog_df["category"] == category].copy()
+
+    # ---- RELEVANCE SORTING (important for speed in Reasoner) ----
+    df["price_usd"] = pd.to_numeric(df.get("price_usd", 0), errors="coerce").fillna(0)
+    df["ram_gb"] = pd.to_numeric(df.get("ram_gb", 0), errors="coerce").fillna(0)
+    df["battery_wh"] = pd.to_numeric(df.get("battery_wh", 0), errors="coerce").fillna(0)
+
+    if budget:
+        df["relevance_price"] = (df["price_usd"] - budget).abs()
+    else:
+        df["relevance_price"] = 0.0
+
+    df = df.sort_values(
+        by=["relevance_price", "ram_gb", "battery_wh"],
+        ascending=[True, False, False],
+    )
+
+    # ---- LIMIT RESULTS FOR SPEED ----
+    TOP_N = 40  # adjust to 20 if needed
+    df = df.head(TOP_N).reset_index(drop=True)
 
     return df

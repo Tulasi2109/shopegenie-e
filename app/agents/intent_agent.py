@@ -1,35 +1,46 @@
 from core.llm_client import chat_llm
 import json
 
-INTENT_SYSTEM_PROMPT = """
-You are the Intent Agent for ShopGenie-E.
+INTENT_PROMPT = """
+Extract the user's shopping intent as STRICT JSON.
 
-Your job is to extract a strict JSON object from the user's request
-for buying an electronic product.
+TASK:
+Return ONLY a JSON object with these fields:
 
-Return JSON with the following fields:
+{
+  "category": "laptop" | "phone" | "tablet",
+  "budget_usd": number | null,
+  "primary_goals": [string, ...],
+  "hard_constraints": { string: number | string, ... },
+  "notes": string
+}
 
-- category: one of ["laptop", "phone", "tablet"] (guess if not explicit)
-- budget_usd: integer value if mentioned, else null
-- primary_goals: list of strings like ["battery_life", "performance", "portability"]
-- hard_constraints: object with things like {"min_ram_gb": 16} if mentioned, else {}
-- notes: short free-text note summarizing the intent
-
-IMPORTANT:
-- Respond with ONLY valid JSON.
-- Do NOT include any extra text.
+RULES:
+- Infer category if not explicit.
+- Detect any numeric constraints (RAM, storage, battery, screen, budget).
+- Keep goals short (e.g., "battery", "performance", "portability").
+- NO explanations or text outside JSON.
 """
 
 def extract_intent(user_query: str) -> dict:
-    raw = chat_llm(INTENT_SYSTEM_PROMPT, user_query)
+    raw = chat_llm(INTENT_PROMPT, user_query)
+
+    # Remove accidental Markdown formatting if model wraps JSON
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        # Remove optional "json"
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        # Fallback: return a minimal intent if parsing fails
+        return json.loads(cleaned)
+    except Exception:
+        # Fallback if JSON fails
         return {
             "category": "laptop",
             "budget_usd": None,
             "primary_goals": [],
             "hard_constraints": {},
-            "notes": user_query
+            "notes": user_query,
         }
