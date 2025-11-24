@@ -166,17 +166,24 @@ Return ONLY valid JSON (no extra text, no markdown), as a list like:
 ]
 """
 
-
     raw = chat_llm(prompt)
-
-    # --- Robust JSON extraction/parsing ---
     text = raw.strip()
 
-    # Remove fenced code blocks if present
-    if text.startswith("```"):
-        text = text.strip("`")
+    # --- Robust JSON extraction/parsing ---
+
+    # If model wrapped response in ```json ... ``` fences
+    if "```" in text:
+        parts = text.split("```")
+        # Usually: ["", "json\n[...]", ""]
+        # Take the middle non-empty chunk
+        for part in parts:
+            chunk = part.strip()
+            if chunk:
+                text = chunk
+                break
+        # Remove leading "json" line if present
         if text.lower().startswith("json"):
-            text = text[4:].strip()
+            text = text[4:].lstrip()
 
     parsed = None
 
@@ -186,7 +193,7 @@ Return ONLY valid JSON (no extra text, no markdown), as a list like:
     except Exception:
         parsed = None
 
-    # 2) Try extracting first JSON array block
+    # 2) Try extracting first JSON array block if still failing
     if parsed is None:
         try:
             start = text.index("[")
