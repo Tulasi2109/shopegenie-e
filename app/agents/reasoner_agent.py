@@ -137,21 +137,25 @@ Your goal is to CONVINCE the user why each product is recommended,
 especially the highest-scoring ones.
 
 Task:
-For EACH product, write a clear, persuasive explanation (3–4 sentences) that:
-- Explicitly connects the user's goals to the product's strengths
-- Explains WHY this product is a strong choice given its score and specs
-- Mentions 1–2 concrete advantages (e.g., RAM, battery, screen size, price, portability)
-- Mentions exactly ONE trade-off or limitation (e.g., slightly heavier, smaller screen, or higher price)
+For EACH product, write a highly persuasive, consumer-friendly explanation (4–5 sentences) that:
+
+1. Starts with a strong statement about who the product is ideal for (students, professionals, programmers, creators, travelers, etc.).
+2. Connects the user’s goals directly with the product’s strengths (e.g., RAM for multitasking, display size for comfort, battery for mobility).
+3. Highlights 2–3 practical advantages using natural, conversational language (e.g., “smooth multitasking,” “excellent for coding,” “comfortable 15.6-inch display”).
+4. Sounds genuinely convincing — like an honest electronics expert explaining why this product is worth choosing.
+5. Includes exactly ONE clear trade-off (e.g., “However, the integrated GPU limits heavy gaming,” or “However, it may feel a bit heavy in a backpack.”)
 
 Tone:
-- Be helpful, confident, and user-focused (like a good salesperson who is honest).
-- For very high scores (>= 90), use language like "excellent fit", "standout choice".
-- For medium scores (75–89), use language like "solid, well-balanced option".
+- Warm, confident, and helpful (similar to product expert recommendations on Amazon or BestBuy).
+- Avoid robotic or generic phrases.
+- Do NOT list specs directly; instead interpret them in human terms (“great for multitasking”, “bright display for long sessions”, “battery lasts through a full workday”).
+- Do NOT repeat the same phrasing across different products.
+- Do NOT mention 'rank_id' in the explanation.
 
 Guidelines:
-- Mention the display size when it matters (e.g., “compact 14-inch screen” or “spacious 16-inch display”).
-- Do NOT list raw numbers only; interpret them for the user (e.g., "great for multitasking", "all-day battery").
-- Do NOT mention 'rank_id' in the explanation.
+- Mention the display size when relevant (e.g., “compact 14-inch screen”, “spacious 16-inch panel”).
+- Avoid repeating numbers verbatim; focus on how those specs benefit the user.
+- The highest-scoring products should feel like the strongest recommendations.
 
 Output format:
 Return ONLY valid JSON (no extra text, no markdown), as a list like:
@@ -161,6 +165,7 @@ Return ONLY valid JSON (no extra text, no markdown), as a list like:
   ...
 ]
 """
+
 
     raw = chat_llm(prompt)
 
