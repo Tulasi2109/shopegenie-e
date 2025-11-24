@@ -1,53 +1,31 @@
 # app/app.py
 
-import streamlit as st
+import math
+from typing import List, Dict, Any
+
 import pandas as pd
+import streamlit as st
 
 from core.orchestrator import run_pipeline
 from core.llm_client import chat_llm   # GenAI client
 
 
-# =========================
-#   Dark table styling
-# =========================
+# =====================================================================
+#   Helper: Product Card Renderer
+# =====================================================================
 
-def style_dark(df: pd.DataFrame):
+def render_product_card(
+    rank_index: int,
+    rec: Dict[str, Any],
+    products_df: pd.DataFrame,
+    user_query: str,
+    intent: Dict[str, Any],
+):
     """
-    Apply a dark theme style to the candidate products table
-    so it visually matches the darker recommendation cards section.
+    Render a single recommendation card + 'Ask Genie why this fits me' follow-up.
     """
-    return (
-        df.style
-        .set_properties(**{
-            "background-color": "#111827",   # table background
-            "color": "#F3F4F6",              # text color
-            "border-color": "#1F2937",       # grid lines
-        })
-        .set_table_styles([
-            {
-                "selector": "thead th",
-                "props": [
-                    ("background-color", "#1F2937"),
-                    ("color", "white"),
-                    ("font-weight", "bold"),
-                    ("border-bottom", "1px solid #374151"),
-                ],
-            },
-        ])
-    )
 
-
-# =========================
-#   Card renderer
-# =========================
-
-def render_product_card(rank_index: int, rec: dict, products_df):
-    """
-    Render a ranked recommendation card.
-
-    We try to re-attach richer specs from the original products_df
-    (price, RAM, storage, battery, weight, screen size).
-    """
+    # Try to match this recommendation back to the products dataframe
     row = None
     try:
         matched = products_df[products_df["id"] == rec.get("id")]
@@ -56,6 +34,7 @@ def render_product_card(rank_index: int, rec: dict, products_df):
     except Exception:
         row = None
 
+    # Specs line for the compact line under title
     if row is not None:
         specs_line = (
             f"💰 ${row.get('price_usd', 'N/A')} • "
@@ -66,28 +45,34 @@ def render_product_card(rank_index: int, rec: dict, products_df):
             f"⚖️ {row.get('weight_kg', 'N/A')} kg"
         )
     else:
-        # Fallback if we cannot find the row in products_df
-        specs_line = "Specs not available in table."
+        specs_line = (
+            f"💰 ${rec.get('price_usd', 'N/A')} • "
+            f"🧠 {rec.get('ram_gb', 'N/A')} GB RAM • "
+            f"💾 {rec.get('storage_gb', 'N/A')} GB storage • "
+            f"🔋 {rec.get('battery_wh', 'N/A')} Wh battery • "
+            f"📺 {rec.get('screen_inches', 'N/A')}-inch display"
+        )
 
+    # Main card UI
     st.markdown(
         f"""
         <div style="
-            border-radius: 18px;
-            padding: 18px 20px;
+            border-radius: 24px;
+            padding: 18px 22px;
             margin: 10px 0 14px 0;
-            background-color: #0f172a;
+            background-color: #020617;
             border: 1px solid #1f2937;
         ">
-            <h3 style="margin: 0 0 8px 0; color:#f9fafb;">
+            <h3 style="margin: 0 0 10px 0; color:#f9fafb; font-size:1.35rem;">
                 {rank_index}. {rec.get('title', 'Unknown Product')}
                 <span style="font-size: 0.9rem; color: #9CA3AF;">
                     (Score: {rec.get('score', 'N/A')})
                 </span>
             </h3>
-            <p style="margin: 0 0 8px 0; color: #e5e7eb;">
+            <p style="margin: 0 0 10px 0; color: #e5e7eb; font-size:0.95rem;">
                 {specs_line}
             </p>
-            <p style="margin: 0; color: #e5e7eb;">
+            <p style="margin: 0; color: #e5e7eb; font-size:0.98rem;">
                 {rec.get('explanation', '')}
             </p>
         </div>
@@ -95,10 +80,62 @@ def render_product_card(rank_index: int, rec: dict, products_df):
         unsafe_allow_html=True,
     )
 
+    # ------------------------------
+    # Ask Genie why this fits me
+    # ------------------------------
+    if "why_fit" not in st.session_state:
+        st.session_state["why_fit"] = {}
 
-# =========================
-#   Page config + CSS
-# =========================
+    follow_key = f"why_{rec.get('id', rank_index)}"
+
+    cols = st.columns([1, 6])
+    with cols[0]:
+        ask_clicked = st.button(
+            "🤔 Ask Genie why this fits me",
+            key=follow_key,
+            use_container_width=True,
+        )
+
+    if ask_clicked:
+        try:
+            follow_prompt = f"""
+You are ShopGenie-E, an expert electronics assistant.
+
+User query:
+{user_query}
+
+Parsed intent:
+{intent}
+
+Selected product (JSON):
+{rec}
+
+Explain in 3–4 sentences, conversational and specific, why this product is a particularly good fit for the user.
+Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing raw numeric specs.
+"""
+            answer = chat_llm(follow_prompt)
+        except Exception as e:
+            answer = f"(Could not contact Genie for a follow-up explanation: {e})"
+        st.session_state["why_fit"][follow_key] = answer
+
+    if follow_key in st.session_state["why_fit"]:
+        st.markdown(
+            f"""
+            <div style="margin: 4px 0 18px 4px;">
+                <p style="color:#e5e7eb; font-size:0.9rem; margin:0;">
+                    <strong>Genie says:</strong> {st.session_state['why_fit'][follow_key]}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+
+# =====================================================================
+#   Page config + Global CSS
+# =====================================================================
 
 st.set_page_config(
     page_title="SHOPGENIE-E",
@@ -167,14 +204,13 @@ st.markdown(
         box-shadow: 0 16px 32px rgba(37, 99, 235, 0.45);
     }
 
-    /* Animated Search Bar */
+    /* Search bar */
     div[data-baseweb="input"] {
         border-radius: 999px !important;
         overflow: hidden;
         transition: box-shadow 0.25s ease, transform 0.2s ease;
         box-shadow: 0 4px 10px rgba(15,23,42,0.08);
         background: #ffffff;
-        animation: genie-breathe 3s ease-in-out infinite;
     }
 
     div[data-baseweb="input"] > div > input {
@@ -187,13 +223,6 @@ st.markdown(
         box-shadow: 0 0 0 3px rgba(37,99,235,0.35),
                      0 18px 30px rgba(15,23,42,0.18);
         transform: translateY(-1px);
-        animation: none;
-    }
-
-    @keyframes genie-breathe {
-        0%   { box-shadow: 0 4px 10px rgba(15,23,42,0.08); }
-        50%  { box-shadow: 0 8px 18px rgba(37,99,235,0.18); }
-        100% { box-shadow: 0 4px 10px rgba(15,23,42,0.08); }
     }
     </style>
     """,
@@ -228,9 +257,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# =========================
-#   HERO SECTION
-# =========================
+# =====================================================================
+#   HERO SECTION + Recent Searches
+# =====================================================================
+
+if "recent_queries" not in st.session_state:
+    st.session_state["recent_queries"] = []
 
 hero = st.container()
 
@@ -250,6 +282,7 @@ with hero:
             unsafe_allow_html=True,
         )
 
+        # Text input with persistence via session_state
         user_query = st.text_input(
             label="",
             placeholder="e.g. best laptop under $1000 for data analyst",
@@ -257,7 +290,20 @@ with hero:
             key="hero_query",
         )
 
-        generate_clicked = st.button("Get Recommendations", key="hero_button")
+        # Recent search chips
+        recent = st.session_state["recent_queries"]
+        if recent:
+            st.markdown("**Recent searches:**")
+            chip_cols = st.columns(min(len(recent), 5))
+            for i, q in enumerate(reversed(recent[-5:])):
+                if chip_cols[i].button(q, key=f"recent_query_{i}"):
+                    st.session_state["hero_query"] = q
+                    st.session_state["trigger_search"] = True
+
+        # Main CTA button
+        button_clicked = st.button("Get Recommendations", key="hero_button")
+        trigger_recent = st.session_state.pop("trigger_search", False)
+        generate_clicked = button_clicked or trigger_recent
 
     with right:
         try:
@@ -267,27 +313,38 @@ with hero:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================
+# =====================================================================
 #   RESULTS SECTION
-# =========================
+# =====================================================================
 
 results_container = st.container()
 
 if generate_clicked:
-    if not user_query.strip():
+    if not st.session_state.get("hero_query", "").strip():
         results_container.error("Please enter a query.")
     else:
+        user_query = st.session_state["hero_query"].strip()
+
+        # Save into recent queries (keep last 5)
+        rq = st.session_state["recent_queries"]
+        if user_query not in rq:
+            rq.append(user_query)
+            st.session_state["recent_queries"] = rq[-5:]
+
         with results_container:
             st.subheader("Results")
-            st.info("Running multi-agent reasoning… Please wait.")
+            st.info("Running multi-agent reasoning…")
+
             with st.spinner("Agents thinking…"):
                 try:
                     intent, products, ranking = run_pipeline(user_query)
 
-                    results = ranking.get("results", [])
+                    results: List[Dict[str, Any]] = ranking.get("results", [])
                     summary_text = ""
 
-                    # High-level summary for the user
+                    # ------------------------------
+                    # Short AI shopping summary
+                    # ------------------------------
                     if results:
                         try:
                             summary_prompt = f"""
@@ -313,20 +370,129 @@ In 2–3 clean sentences:
                             unsafe_allow_html=True,
                         )
 
-                    # Candidate products table (after filters)
+                    # ------------------------------
+                    # Candidate products table
+                    # ------------------------------
                     if products is not None and not products.empty:
                         st.markdown("### 📦 Candidate Products (After Filters)")
-                        st.dataframe(style_dark(products), use_container_width=True)
+
+                        # Dark-style dataframe to match cards
+                        styled_products = (
+                            products.style
+                            .set_properties(
+                                **{
+                                    "background-color": "#020617",
+                                    "color": "#e5e7eb",
+                                    "border-color": "#1f2937",
+                                }
+                            )
+                            .set_table_styles(
+                                [
+                                    {
+                                        "selector": "th",
+                                        "props": [
+                                            ("background-color", "#020617"),
+                                            ("color", "#e5e7eb"),
+                                        ],
+                                    }
+                                ]
+                            )
+                        )
+                        st.dataframe(styled_products, use_container_width=True, hide_index=True)
                     else:
                         st.warning("No candidate products found after filtering.")
 
+                    # ------------------------------
                     # Ranked recommendations
+                    # ------------------------------
                     st.markdown("### ⭐ Ranked Recommendations")
                     if results:
                         for i, rec in enumerate(results, start=1):
-                            render_product_card(i, rec, products)
+                            render_product_card(i, rec, products, user_query, intent)
                     else:
                         st.warning("No ranked recommendations returned.")
+
+                    # ==================================================
+                    # 🎛️ Interactive Re-Ranking by Sliders
+                    # ==================================================
+                    if results:
+                        st.markdown("### 🎛️ Fine-tune Your Preferences")
+
+                        with st.expander("Adjust importance of price, performance, battery, and screen size"):
+                            base_weights = ranking.get("weights", {})
+                            price_default = float(base_weights.get("price", 0.30))
+                            perf_default = float(base_weights.get("performance", 0.40))
+                            batt_default = float(base_weights.get("battery", 0.30))
+                            screen_default = float(base_weights.get("screen", 0.00))
+
+                            price_w = st.slider(
+                                "Price importance (lower price is better)",
+                                0.0, 1.0, price_default, 0.05,
+                            )
+                            perf_w = st.slider(
+                                "Performance importance (RAM + storage)",
+                                0.0, 1.0, perf_default, 0.05,
+                            )
+                            batt_w = st.slider(
+                                "Battery life importance",
+                                0.0, 1.0, batt_default, 0.05,
+                            )
+                            screen_w = st.slider(
+                                "Screen size importance",
+                                0.0, 1.0, screen_default, 0.05,
+                            )
+
+                            total_w = price_w + perf_w + batt_w + screen_w
+                            if total_w <= 0:
+                                total_w = 1.0
+
+                            w_price = price_w / total_w
+                            w_perf = perf_w / total_w
+                            w_batt = batt_w / total_w
+                            w_screen = screen_w / total_w
+
+                            # Convert results to DataFrame for re-scoring
+                            res_df = pd.DataFrame(results)
+
+                            def _norm(series, higher=True):
+                                s = pd.to_numeric(series, errors="coerce")
+                                if s.notna().sum() == 0:
+                                    return pd.Series([0.5] * len(s), index=series.index)
+                                min_v, max_v = s.min(), s.max()
+                                if math.isclose(min_v, max_v):
+                                    vals = pd.Series([0.5] * len(s), index=series.index)
+                                else:
+                                    vals = (s - min_v) / (max_v - min_v)
+                                if not higher:
+                                    vals = 1.0 - vals
+                                return vals.fillna(0.5)
+
+                            price_score = _norm(res_df.get("price_usd"), higher=False)
+                            perf_score = _norm(
+                                res_df.get("ram_gb", 0).fillna(0)
+                                + res_df.get("storage_gb", 0).fillna(0),
+                                higher=True,
+                            )
+                            batt_score = _norm(res_df.get("battery_wh"), higher=True)
+                            screen_score = _norm(res_df.get("screen_inches"), higher=True)
+
+                            res_df["custom_score"] = (
+                                w_price * price_score
+                                + w_perf * perf_score
+                                + w_batt * batt_score
+                                + w_screen * screen_score
+                            )
+
+                            res_df_sorted = res_df.sort_values(
+                                "custom_score", ascending=False
+                            ).reset_index(drop=True)
+
+                            st.markdown("#### 🔁 Re-ranked for your preferences")
+                            for idx, rec_row in res_df_sorted.iterrows():
+                                rec_dict = rec_row.to_dict()
+                                render_product_card(
+                                    idx + 1, rec_dict, products, user_query, intent
+                                )
 
                 except Exception as e:
                     st.error(f"Error: {e}")
