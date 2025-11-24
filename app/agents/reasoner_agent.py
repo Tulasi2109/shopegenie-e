@@ -113,8 +113,8 @@ def _build_explanations_batch(
             }
         )
 
-    prompt = f"""
-You are an expert electronics advisor.
+        prompt = f"""
+You are an expert electronics advisor helping a user choose between multiple products.
 
 The user cares about: {goals_text}.
 Device category: {category}.
@@ -126,23 +126,31 @@ You are given a list of candidate products as JSON:
 Each product has:
 - rank_id (a unique identifier for this session)
 - title
-- overall score (0–100)
+- overall score (0–100) where HIGHER is BETTER
 - price_usd
 - ram_gb
 - storage_gb
 - battery_wh
 - screen_inches (display size in inches if available)
 
+Your goal is to CONVINCE the user why each product is recommended,
+especially the highest-scoring ones.
+
 Task:
-For EACH product, write a persuasive, user-friendly explanation (3–4 sentences) focusing on:
-- Why this product matches the user's goals (connect goals → specs clearly)
-- One or two concrete strengths (e.g., RAM, battery, price, or screen size)
-- One clear trade-off or limitation (e.g., slightly heavier, more expensive, smaller screen)
+For EACH product, write a clear, persuasive explanation (3–4 sentences) that:
+- Explicitly connects the user's goals to the product's strengths
+- Explains WHY this product is a strong choice given its score and specs
+- Mentions 1–2 concrete advantages (e.g., RAM, battery, screen size, price, portability)
+- Mentions exactly ONE trade-off or limitation (e.g., slightly heavier, smaller screen, or higher price)
+
+Tone:
+- Be helpful, confident, and user-focused (like a good salesperson who is honest).
+- For very high scores (>= 90), use language like "excellent fit", "standout choice".
+- For medium scores (75–89), use language like "solid, well-balanced option".
 
 Guidelines:
-- Mention the display size when it is relevant (e.g., “compact 14-inch screen” or “spacious 16-inch display”).
-- Speak qualitatively (e.g., "strong battery life", "great for multitasking", "good value for the price").
-- Do NOT just dump raw numbers.
+- Mention the display size when it matters (e.g., “compact 14-inch screen” or “spacious 16-inch display”).
+- Do NOT list raw numbers only; interpret them for the user (e.g., "great for multitasking", "all-day battery").
 - Do NOT mention 'rank_id' in the explanation.
 
 Output format:
@@ -153,6 +161,7 @@ Return ONLY valid JSON (no extra text, no markdown), as a list like:
   ...
 ]
 """
+
     raw = chat_llm(prompt)
 
     # Try to recover JSON even if model wraps it in ```json ... ```
