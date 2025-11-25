@@ -11,6 +11,19 @@ from core.llm_client import chat_llm   # GenAI client
 
 
 # =====================================================================
+#   Session state for caching results (so Ask Genie works)
+# =====================================================================
+if "last_query" not in st.session_state:
+    st.session_state["last_query"] = None
+    st.session_state["last_intent"] = None
+    st.session_state["last_products"] = None
+    st.session_state["last_ranking"] = None
+    st.session_state["last_summary"] = ""
+if "scroll_to" not in st.session_state:
+    st.session_state["scroll_to"] = None
+
+
+# =====================================================================
 #   Helper: Product Card Renderer
 # =====================================================================
 
@@ -28,9 +41,10 @@ def render_product_card(
     # Try to match this recommendation back to the products dataframe
     row = None
     try:
-        matched = products_df[products_df["id"] == rec.get("id")]
-        if not matched.empty:
-            row = matched.iloc[0]
+        if products_df is not None:
+            matched = products_df[products_df["id"] == rec.get("id")]
+            if not matched.empty:
+                row = matched.iloc[0]
     except Exception:
         row = None
 
@@ -80,7 +94,7 @@ def render_product_card(
         unsafe_allow_html=True,
     )
 
-       # ------------------------------
+    # ------------------------------
     # Ask Genie why this fits me
     # ------------------------------
     if "why_fit" not in st.session_state:
@@ -92,7 +106,7 @@ def render_product_card(
     with cols[0]:
         ask_clicked = st.button(
             "🤔 Ask Genie why this fits me",
-            key=f"btn_{follow_key}",     # 🔥 avoid key collision
+            key=f"btn_{follow_key}",     # avoid key collision
             use_container_width=True,
         )
 
@@ -120,7 +134,7 @@ Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing ra
 
         # store answer
         st.session_state["why_fit"][follow_key] = answer
-        st.session_state["scroll_to"] = follow_key  # 🔥 request scroll
+        st.session_state["scroll_to"] = follow_key  # request scroll
 
     # Render explanation if exists
     if follow_key in st.session_state["why_fit"]:
@@ -149,6 +163,7 @@ Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing ra
             unsafe_allow_html=True,
         )
         st.session_state["scroll_to"] = None
+
 
 # =====================================================================
 #   Page config + Global CSS
@@ -316,37 +331,48 @@ with hero:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================================
-#   RESULTS SECTION
+#   RESULTS SECTION (pipeline + cached display)
 # =====================================================================
 
 results_container = st.container()
 
+# 1) If button clicked, run pipeline and cache results
 if generate_clicked:
-    if not st.session_state.get("hero_query", "").strip():
-        results_container.error("Please enter a query.")
-    else:
-        user_query = st.session_state["hero_query"].strip()
+    query_raw = st.session_state.get("hero_query", "").strip()
 
+    if not query_raw:
+        with results_container:
+            st.error("Please enter a query.")
+        # clear cache so old results don't show
+        st.session_state["last_query"] = None
+        st.session_state["last_intent"] = None
+        st.session_state["last_products"] = None
+        st.session_state["last_ranking"] = None
+        st.session_state["last_summary"] = ""
+    else:
         with results_container:
             st.subheader("Results")
             st.info("Running multi-agent reasoning…")
 
             with st.spinner("Agents thinking…"):
                 try:
-                    intent, products, ranking = run_pipeline(user_query)
+                    intent, products, ranking = run_pipeline(query_raw)
 
-                    results: List[Dict[str, Any]] = ranking.get("results", [])
+                    # cache results
+                    st.session_state["last_query"] = query_raw
+                    st.session_state["last_intent"] = intent
+                    st.session_state["last_products"] = products
+                    st.session_state["last_ranking"] = ranking
+
+                    results: List[Dict[str, Any]] = ranking.get("results", []) if ranking else []
                     summary_text = ""
 
-                    # ------------------------------
-                    # Short AI shopping summary
-                    # ------------------------------
                     if results:
                         try:
                             summary_prompt = f"""
 You are an expert electronics shopping assistant.
 
-User query: {user_query}
+User query: {query_raw}
 Intent: {intent}
 Top results (truncated): {results[:3]}
 
@@ -359,54 +385,74 @@ In 2–3 clean sentences:
                         except Exception as e:
                             summary_text = f"(AI summary error: {e})"
 
-                    if summary_text:
-                        st.markdown("### 🧾 AI Shopping Summary")
-                        st.markdown(
-                            f"<p style='color:#111827; font-size:1rem;'>{summary_text}</p>",
-                            unsafe_allow_html=True,
-                        )
-
-                    # ------------------------------
-                    # Candidate products table
-                    # ------------------------------
-                    if products is not None and not products.empty:
-                        st.markdown("### 📦 Candidate Products (After Filters)")
-
-                        # Dark-style dataframe to match cards
-                        styled_products = (
-                            products.style
-                            .set_properties(
-                                **{
-                                    "background-color": "#020617",
-                                    "color": "#e5e7eb",
-                                    "border-color": "#1f2937",
-                                }
-                            )
-                            .set_table_styles(
-                                [
-                                    {
-                                        "selector": "th",
-                                        "props": [
-                                            ("background-color", "#020617"),
-                                            ("color", "#e5e7eb"),
-                                        ],
-                                    }
-                                ]
-                            )
-                        )
-                        st.dataframe(styled_products, use_container_width=True, hide_index=True)
-                    else:
-                        st.warning("No candidate products found after filtering.")
-
-                    # ------------------------------
-                    # Ranked recommendations
-                    # ------------------------------
-                    st.markdown("### ⭐ Ranked Recommendations")
-                    if results:
-                        for i, rec in enumerate(results, start=1):
-                            render_product_card(i, rec, products, user_query, intent)
-                    else:
-                        st.warning("No ranked recommendations returned.")
+                    st.session_state["last_summary"] = summary_text
 
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+# 2) Always display the latest cached results (works for Ask-Genie reruns)
+if st.session_state.get("last_query"):
+    user_query = st.session_state["last_query"]
+    intent = st.session_state["last_intent"]
+    products = st.session_state["last_products"]
+    ranking = st.session_state["last_ranking"]
+    summary_text = st.session_state.get("last_summary", "")
+
+    results: List[Dict[str, Any]] = ranking.get("results", []) if ranking else []
+
+    with results_container:
+        # If this is a rerun (Ask Genie), we still need a header
+        if not generate_clicked:
+            st.subheader("Results")
+
+        # ------------------------------
+        # Short AI shopping summary
+        # ------------------------------
+        if summary_text:
+            st.markdown("### 🧾 AI Shopping Summary")
+            st.markdown(
+                f"<p style='color:#111827; font-size:1rem;'>{summary_text}</p>",
+                unsafe_allow_html=True,
+            )
+
+        # ------------------------------
+        # Candidate products table
+        # ------------------------------
+        if products is not None and not products.empty:
+            st.markdown("### 📦 Candidate Products (After Filters)")
+
+            # Dark-style dataframe to match cards
+            styled_products = (
+                products.style
+                .set_properties(
+                    **{
+                        "background-color": "#020617",
+                        "color": "#e5e7eb",
+                        "border-color": "#1f2937",
+                    }
+                )
+                .set_table_styles(
+                    [
+                        {
+                            "selector": "th",
+                            "props": [
+                                ("background-color", "#020617"),
+                                ("color", "#e5e7eb"),
+                            ],
+                        }
+                    ]
+                )
+            )
+            st.dataframe(styled_products, use_container_width=True, hide_index=True)
+        else:
+            st.warning("No candidate products found after filtering.")
+
+        # ------------------------------
+        # Ranked recommendations
+        # ------------------------------
+        st.markdown("### ⭐ Ranked Recommendations")
+        if results:
+            for i, rec in enumerate(results, start=1):
+                render_product_card(i, rec, products, user_query, intent)
+        else:
+            st.warning("No ranked recommendations returned.")
