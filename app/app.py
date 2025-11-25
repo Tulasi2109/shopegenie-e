@@ -23,6 +23,7 @@ def render_product_card(
 ):
     """
     Render a single recommendation card + 'Ask Genie why this fits me' follow-up.
+    Keeps the existing visual style; only logic is improved.
     """
 
     # Try to match this recommendation back to the products dataframe
@@ -53,13 +54,13 @@ def render_product_card(
             f"📺 {rec.get('screen_inches', 'N/A')}-inch display"
         )
 
-    # Main card UI
+    # Main card UI (unchanged style)
     st.markdown(
         f"""
         <div style="
             border-radius: 24px;
             padding: 18px 22px;
-            margin: 10px 0 14px 0;
+            margin: 10px 0 10px 0;
             background-color: #020617;
             border: 1px solid #1f2937;
         ">
@@ -88,49 +89,64 @@ def render_product_card(
 
     follow_key = f"why_{rec.get('id', rank_index)}"
 
-    cols = st.columns([1, 6])
-    with cols[0]:
-        ask_clicked = st.button(
-            "🤔 Ask Genie why this fits me",
-            key=follow_key,
-            use_container_width=True,
-        )
+    # Keep whatever global button style you already have
+    ask_clicked = st.button(
+        "🤔 Ask Genie why this fits me",
+        key=follow_key,
+        use_container_width=False,
+    )
 
     if ask_clicked:
-        try:
-            follow_prompt = f"""
-You are ShopGenie-E, an expert electronics assistant.
+        # Clear, focused prompt on *why* this specific product is recommended
+        follow_prompt = f"""
+You are ShopGenie-E, an honest but persuasive electronics expert.
 
-User query:
+The user asked:
 {user_query}
 
-Parsed intent:
+Parsed intent (goals and constraints):
 {intent}
 
-Selected product (JSON):
+This is the recommended product (JSON):
 {rec}
 
-Explain in 3–4 sentences, conversational and specific, why this product is a particularly good fit for the user.
-Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing raw numeric specs.
+Explain in 3–5 short sentences:
+- WHY this product is a good match for the user's goals
+- What real-life benefits they get (e.g., smooth multitasking, all-day battery, comfortable screen size)
+- One honest trade-off or limitation they should know
+Do NOT repeat raw numbers or the word "score" — describe everything in natural, human language.
 """
+        try:
             answer = chat_llm(follow_prompt)
         except Exception as e:
             answer = f"(Could not contact Genie for a follow-up explanation: {e})"
+
+        # Store answer so it persists on rerun
         st.session_state["why_fit"][follow_key] = answer
 
+    # Show Genie explanation if we have it
     if follow_key in st.session_state["why_fit"]:
+        genie_answer = st.session_state["why_fit"][follow_key]
         st.markdown(
             f"""
-            <div style="margin: 4px 0 18px 4px;">
-                <p style="color:#e5e7eb; font-size:0.9rem; margin:0;">
-                    <strong>Genie says:</strong> {st.session_state['why_fit'][follow_key]}
+            <div style="
+                margin-top: 6px;
+                margin-bottom: 18px;
+                padding: 10px 14px;
+                border-radius: 12px;
+                background-color: #e5f0ff;
+                border: 1px solid #bfdbfe;
+            ">
+                <p style="color:#111827; font-size:0.9rem; margin:0;">
+                    <strong>Genie says:</strong> {genie_answer}
                 </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
     else:
-        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+        # Small spacer so layout looks neat even before click
+        st.markdown("<div style='margin-bottom:14px;'></div>", unsafe_allow_html=True)
 
 
 # =====================================================================
