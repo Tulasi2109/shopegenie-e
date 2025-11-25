@@ -80,7 +80,7 @@ def render_product_card(
         unsafe_allow_html=True,
     )
 
-    # ------------------------------
+       # ------------------------------
     # Ask Genie why this fits me
     # ------------------------------
     if "why_fit" not in st.session_state:
@@ -92,13 +92,14 @@ def render_product_card(
     with cols[0]:
         ask_clicked = st.button(
             "🤔 Ask Genie why this fits me",
-            key=follow_key,
+            key=f"btn_{follow_key}",     # 🔥 avoid key collision
             use_container_width=True,
         )
 
     if ask_clicked:
-        try:
-            follow_prompt = f"""
+        with st.spinner("Genie is thinking…"):
+            try:
+                follow_prompt = f"""
 You are ShopGenie-E, an expert electronics assistant.
 
 User query:
@@ -113,15 +114,19 @@ Selected product (JSON):
 Explain in 3–4 sentences, conversational and specific, why this product is a particularly good fit for the user.
 Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing raw numeric specs.
 """
-            answer = chat_llm(follow_prompt)
-        except Exception as e:
-            answer = f"(Could not contact Genie for a follow-up explanation: {e})"
-        st.session_state["why_fit"][follow_key] = answer
+                answer = chat_llm(follow_prompt)
+            except Exception as e:
+                answer = f"(Could not contact Genie for a follow-up explanation: {e})"
 
+        # store answer
+        st.session_state["why_fit"][follow_key] = answer
+        st.session_state["scroll_to"] = follow_key  # 🔥 request scroll
+
+    # Render explanation if exists
     if follow_key in st.session_state["why_fit"]:
         st.markdown(
             f"""
-            <div style="margin: 4px 0 18px 4px;">
+            <div id="{follow_key}" style="margin: 4px 0 18px 4px;">
                 <p style="color:#e5e7eb; font-size:0.9rem; margin:0;">
                     <strong>Genie says:</strong> {st.session_state['why_fit'][follow_key]}
                 </p>
@@ -129,9 +134,21 @@ Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing ra
             """,
             unsafe_allow_html=True,
         )
-    else:
-        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
+    # Auto-scroll logic
+    if st.session_state.get("scroll_to") == follow_key:
+        st.markdown(
+            f"""
+            <script>
+                var el = document.getElementById("{follow_key}");
+                if (el) {{
+                    el.scrollIntoView({{ behavior: "smooth", block: "center" }});
+                }}
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.session_state["scroll_to"] = None
 
 # =====================================================================
 #   Page config + Global CSS
