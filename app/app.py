@@ -88,37 +88,30 @@ def render_product_card(
 
     follow_key = f"why_{rec.get('id', rank_index)}"
 
-    ask_clicked = st.button(
-        "🤔 Ask Genie why this fits me",
-        key=follow_key,
-        use_container_width=False,
-    )
+    cols = st.columns([1, 6])
+    with cols[0]:
+        ask_clicked = st.button(
+            "🤔 Ask Genie why this fits me",
+            key=follow_key,
+            use_container_width=True,
+        )
 
     if ask_clicked:
         try:
             follow_prompt = f"""
 You are ShopGenie-E, an expert electronics assistant.
 
-The user originally asked:
-\"\"\"{user_query}\"\"\"
+User query:
+{user_query}
 
-Parsed intent (JSON-like):
+Parsed intent:
 {intent}
 
-Selected product (JSON-like):
+Selected product (JSON):
 {rec}
 
-Write a short, very clear explanation of WHY this specific product was recommended.
-
-Requirements:
-- Start the answer with: "This was recommended because..."
-- Explicitly connect what the user asked for to this product's strengths
-  (e.g., performance, battery, portability, screen size, price).
-- Mention 2–3 concrete benefits in natural language
-  (e.g., "great for multitasking", "comfortable 15.6-inch screen", "battery that lasts a full workday").
-- Mention exactly ONE honest trade-off (heavier, more expensive, smaller screen, etc.).
-- Do NOT repeat the numeric specs or the word "score"; interpret them for the user instead.
-- Keep it 3–4 sentences, conversational and easy to understand.
+Explain in 3–4 sentences, conversational and specific, why this product is a particularly good fit for the user.
+Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing raw numeric specs.
 """
             answer = chat_llm(follow_prompt)
         except Exception as e:
@@ -128,14 +121,8 @@ Requirements:
     if follow_key in st.session_state["why_fit"]:
         st.markdown(
             f"""
-            <div style="
-                margin: 6px 0 18px 0;
-                padding: 10px 14px;
-                border-radius: 12px;
-                background-color: #e5f0ff;
-                border: 1px solid #bfdbfe;
-            ">
-                <p style="color:#111827; font-size:0.9rem; margin:0;">
+            <div style="margin: 4px 0 18px 4px;">
+                <p style="color:#e5e7eb; font-size:0.9rem; margin:0;">
                     <strong>Genie says:</strong> {st.session_state['why_fit'][follow_key]}
                 </p>
             </div>
@@ -143,7 +130,7 @@ Requirements:
             unsafe_allow_html=True,
         )
     else:
-        st.markdown("<div style='margin-bottom:14px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
 
 # =====================================================================
@@ -197,6 +184,24 @@ st.markdown(
         font-size: 1.05rem;
         color: #4b5563;
         margin-bottom: 1.8rem;
+    }
+
+    /* CTA button */
+    div.stButton > button {
+        background: #2563eb;
+        color: #ffffff;
+        border-radius: 999px;
+        padding: 0.9rem 2.1rem;
+        font-size: 1.05rem;
+        font-weight: 600;
+        border: none;
+        box-shadow: 0 12px 30px rgba(37, 99, 235, 0.35);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    div.stButton > button:hover {
+        background: #1d4ed8;
+        transform: translateY(-1px);
+        box-shadow: 0 16px 32px rgba(37, 99, 235, 0.45);
     }
 
     /* Search bar */
@@ -282,7 +287,7 @@ with hero:
             key="hero_query",
         )
 
-        # Main CTA button only (no recent search chips) — default Streamlit style
+        # Main CTA button only (no recent search chips)
         generate_clicked = st.button("Get Recommendations", key="hero_button")
 
     with right:
