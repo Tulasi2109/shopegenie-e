@@ -199,26 +199,6 @@ st.markdown(
         margin-bottom: 1.8rem;
     }
 
-    /* HERO CTA button (only the big top button) */
-    .hero-cta button {
-        background: #2563eb;
-        color: #ffffff;
-        border-radius: 999px;
-        padding: 0.9rem 2.1rem;
-        font-size: 1.05rem;
-        font-weight: 600;
-        border: none;
-        box-shadow: 0 12px 30px rgba(37, 99, 235, 0.35);
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-    .hero-cta button:hover {
-        background: #1d4ed8;
-        transform: translateY(-1px);
-        box-shadow: 0 16px 32px rgba(37, 99, 235, 0.45);
-    }
-
-    /* Leave all other Streamlit buttons (like Ask Genie) with default styling */
-
     /* Search bar */
     div[data-baseweb="input"] {
         border-radius: 999px !important;
@@ -302,10 +282,8 @@ with hero:
             key="hero_query",
         )
 
-        # Main CTA button only (no recent search chips)
-        st.markdown('<div class="hero-cta">', unsafe_allow_html=True)
+        # Main CTA button only (no recent search chips) — default Streamlit style
         generate_clicked = st.button("Get Recommendations", key="hero_button")
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
         try:
