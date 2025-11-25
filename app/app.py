@@ -38,15 +38,6 @@ def render_product_card(
     Render a single recommendation card + 'Ask Genie why this fits me' follow-up.
     """
 
-    # ------------------------------
-    # Prepare session & key for this card
-    # ------------------------------
-    if "why_fit" not in st.session_state:
-        st.session_state["why_fit"] = {}
-
-    follow_key = f"why_{rec.get('id', rank_index)}"
-    genie_text = st.session_state["why_fit"].get(follow_key)
-
     # Try to match this recommendation back to the products dataframe
     row = None
     try:
@@ -76,10 +67,9 @@ def render_product_card(
             f"📺 {rec.get('screen_inches', 'N/A')}-inch display"
         )
 
-    # ------------------------------
-    # Main card UI (Genie text inside)
-    # ------------------------------
-    card_html = f"""
+    # Main card UI
+    st.markdown(
+        f"""
         <div style="
             border-radius: 24px;
             padding: 18px 22px;
@@ -99,25 +89,19 @@ def render_product_card(
             <p style="margin: 0; color: #e5e7eb; font-size:0.98rem;">
                 {rec.get('explanation', '')}
             </p>
-    """
-
-    # If we already have a Genie explanation, render it INSIDE the card
-    if genie_text:
-        card_html += f"""
-            <div id="{follow_key}" style="margin-top: 10px;">
-                <p style="color:#e5e7eb; font-size:0.9rem; margin:0;">
-                    <strong>Genie says:</strong> {genie_text}
-                </p>
-            </div>
-        """
-
-    card_html += "</div>"
-
-    st.markdown(card_html, unsafe_allow_html=True)
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # ------------------------------
-    # Ask Genie why this fits me (button BELOW card)
+    # Ask Genie why this fits me
     # ------------------------------
+    if "why_fit" not in st.session_state:
+        st.session_state["why_fit"] = {}
+
+    follow_key = f"why_{rec.get('id', rank_index)}"
+
     cols = st.columns([1, 6])
     with cols[0]:
         ask_clicked = st.button(
@@ -152,9 +136,20 @@ Focus on benefits and trade-offs. Avoid repeating the word 'score' or listing ra
         st.session_state["why_fit"][follow_key] = answer
         st.session_state["scroll_to"] = follow_key  # request scroll
 
-    # ------------------------------
-    # Auto-scroll logic (scroll to Genie text inside card)
-    # ------------------------------
+    # Render explanation if exists
+    if follow_key in st.session_state["why_fit"]:
+        st.markdown(
+            f"""
+            <div id="{follow_key}" style="margin: 4px 0 18px 4px;">
+                <p style="color:#111827; font-size:0.9rem; margin:0;">
+                    <strong>Genie says:</strong> {st.session_state['why_fit'][follow_key]}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Auto-scroll logic
     if st.session_state.get("scroll_to") == follow_key:
         st.markdown(
             f"""
